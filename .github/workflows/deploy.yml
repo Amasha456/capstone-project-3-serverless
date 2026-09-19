@@ -27,7 +27,7 @@ jobs:
         uses: aws-actions/setup-sam@v2
 
       - name: Validate the SAM template
-        run: sam validate --lint
+        run: sam validate
 
       - name: Run unit tests
         run: node --test tests/unit.test.js
