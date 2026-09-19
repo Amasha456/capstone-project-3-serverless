@@ -1,0 +1,46 @@
+name: Build, Test and Deploy Serverless App
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION: eu-central-1
+  STACK_NAME: capstone-serverless-tasks
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate the SAM template
+        run: sam validate --lint
+
+      - name: Run unit tests
+        run: node --test tests/unit.test.js
+
+      - name: SAM build
+        run: sam build
+
+      - name: SAM deploy
+        run: |
+          sam deploy \
+            --stack-name $STACK_NAME \
+            --region $AWS_REGION \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3

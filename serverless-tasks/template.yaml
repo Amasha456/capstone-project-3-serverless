@@ -23,7 +23,6 @@ Resources:
       PrimaryKey:
         Name: id
         Type: String
-      BillingMode: PAY_PER_REQUEST
 
   ReportsBucket:
     Type: AWS::S3::Bucket
@@ -55,12 +54,12 @@ Resources:
       StageName: prod
       Auth:
         ApiKeyRequired: true
-      UsagePlan:
-        CreateUsagePlan: PER_API
-        UsagePlanName: capstone-tasks-usage-plan
-        Throttle:
-          RateLimit: 10
-          BurstLimit: 20
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          UsagePlanName: capstone-tasks-usage-plan
+          Throttle:
+            RateLimit: 10
+            BurstLimit: 20
 
   # ---------- Functions ----------
 
