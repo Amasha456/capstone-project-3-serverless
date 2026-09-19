@@ -1,0 +1,157 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Serverless task-management system - Capstone Project 3.
+  API Gateway + 4 Lambda functions + DynamoDB + SQS/DLQ + S3 + EventBridge schedule.
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref TasksTable
+
+Resources:
+
+  # ---------- Storage ----------
+
+  TasksTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+      BillingMode: PAY_PER_REQUEST
+
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "capstone-task-reports-${AWS::AccountId}"
+
+  # ---------- Messaging (SQS + Dead Letter Queue) ----------
+
+  NotificationDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: task-notifications-dlq
+      MessageRetentionPeriod: 1209600 # 14 days
+
+  NotificationQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: task-notifications
+      VisibilityTimeout: 30
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt NotificationDLQ.Arn
+        maxReceiveCount: 3
+
+  # ---------- API Gateway (with an API key requirement on write access) ----------
+
+  TasksApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        ApiKeyRequired: true
+      UsagePlan:
+        CreateUsagePlan: PER_API
+        UsagePlanName: capstone-tasks-usage-plan
+        Throttle:
+          RateLimit: 10
+          BurstLimit: 20
+
+  # ---------- Functions ----------
+
+  CreateTaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/create-task/
+      Handler: index.handler
+      Environment:
+        Variables:
+          QUEUE_URL: !Ref NotificationQueue
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TasksTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt NotificationQueue.QueueName
+      Events:
+        CreateTask:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TasksApi
+            Path: /tasks
+            Method: POST
+            Auth:
+              ApiKeyRequired: true
+
+  ListTasksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/list-tasks/
+      Handler: index.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TasksTable
+      Events:
+        ListTasks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TasksApi
+            Path: /tasks
+            Method: GET
+            Auth:
+              ApiKeyRequired: false
+
+  ProcessNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/process-notification/
+      Handler: index.handler
+      Policies:
+        - SQSPollerPolicy:
+            QueueName: !GetAtt NotificationQueue.QueueName
+      Events:
+        NotificationEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt NotificationQueue.Arn
+            BatchSize: 5
+
+  ExportReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: functions/export-report/
+      Handler: index.handler
+      Timeout: 30
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TasksTable
+          BUCKET_NAME: !Ref ReportsBucket
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref TasksTable
+        - S3CrudPolicy:
+            BucketName: !Ref ReportsBucket
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
+            Description: "Generate a daily CSV report of all tasks"
+            Enabled: true
+
+Outputs:
+  ApiUrl:
+    Description: "Base URL for the Tasks API"
+    Value: !Sub "https://${TasksApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  TasksTableName:
+    Value: !Ref TasksTable
+  ReportsBucketName:
+    Value: !Ref ReportsBucket
+  NotificationQueueUrl:
+    Value: !Ref NotificationQueue
+  NotificationDLQUrl:
+    Value: !Ref NotificationDLQ
