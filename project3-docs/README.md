@@ -37,6 +37,7 @@ EventBridge (daily schedule, rate(1 day))
 ```
 Four Lambda functions, three distinct trigger types (HTTP via API Gateway,
 event-driven via SQS, and scheduled via EventBridge).
+![Architecture diagram](architecture.svg)
 
 ## Technologies Used
 - **Compute**: AWS Lambda (Node.js 20.x)
